@@ -7,7 +7,10 @@
 int main() {
     auto* e = new engine();
 
-
+    while (!glfwWindowShouldClose(&e->getWindow())) {
+        e->update();
+        e->render();
+    }
 
     return 0;
 }

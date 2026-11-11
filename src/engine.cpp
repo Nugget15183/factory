@@ -4,13 +4,21 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "stb_image.h"
 
 using namespace util;
 
 void setWindowCallbacks(GLFWwindow* window) {
+    glfwSetFramebufferSizeCallback(window, [](GLFWwindow* window, int width, int height) {
+        engine* ptr = (engine*)glfwGetWindowUserPointer(window);
 
+        ptr->winSize = { width, height };
+
+        glViewport(0, 0, width, height);
+    });
 }
 
 int engine::init() {
@@ -24,7 +32,7 @@ int engine::init() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     //window creation
-    window = glfwCreateWindow(800, 600, "Factory Game", NULL, NULL);
+    window = glfwCreateWindow(winSize[0],  winSize[1], "Factory Game", NULL, NULL);
     if (window == nullptr) {log(ERRO, "GLFW Failed to create a window"); glfwTerminate(); return -1;}
     glfwMakeContextCurrent(window);
 
@@ -84,9 +92,14 @@ int engine::init() {
         return -1;
     }
 
+    glDeleteShader(vert_shader);
+    glDeleteShader(frag_shader);
+
     //get uniform locs
     viewLoc = glGetUniformLocation(shader_program, "view");
     projLoc = glGetUniformLocation(shader_program, "proj");
+    modelLoc = glGetUniformLocation(shader_program, "model");
+
     camPosLoc = glGetUniformLocation(shader_program, "camPosition");
 
     //opengl settings and misc stuff
@@ -94,8 +107,10 @@ int engine::init() {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glEnable(GL_BLEND);
+
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    //glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetWindowUserPointer(window, this);
 
     log(INFO, "Initalized successfully");
@@ -105,5 +120,42 @@ int engine::init() {
     startup=time;
     lastframe=time;
 
+    cube = mesh::cube();
+    cube.create();
+
     return 0;
+}
+
+void engine::close() {
+    log(INFO, "Closing...");
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
+
+    log(INFO, ("Session duration: " + to_string(glfwGetTime() - startup)).c_str());
+}
+
+void engine::update() {
+    glfwPollEvents();
+}
+
+void engine::render() {
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glUseProgram(shader_program);
+
+    float aspect = winSize.y > 0 ? (float)winSize[0] / (float)winSize[1] : 1.0f;
+    glm::mat4 proj = glm::perspective(glm::radians(FOV), aspect, 0.01f, 1000.0f);
+    glm::mat4 view = glm::lookAt(camPos, camTarget, glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 model = glm::rotate(glm::mat4(1.0f), (float)glfwGetTime(), glm::vec3(0, 1, 0));
+
+    glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+    glUniform3fv(camPosLoc, 1, glm::value_ptr(camPos));
+
+    cube.draw();
+
+    glfwSwapBuffers(window);
 }
