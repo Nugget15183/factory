@@ -1,13 +1,35 @@
 #ifndef FACTORY_ENGINE_H
 #define FACTORY_ENGINE_H
 
+#include "tiny_obj_loader.h"
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <utility>
 
 #include "util.h"
+#include "tiny_obj_loader.h"
+#include "world.h"
 
+class engine;
 using namespace util;
+
+struct tileInst {
+    glm::vec3 pos;
+    glm::vec4 col;
+};
+
+struct properties {
+    glm::vec3 scale = glm::vec3(1);
+    glm::vec3 pos = glm::vec3(0, 0, 0);
+    glm::vec3 rot = glm::vec3(0, 0, 0);
+
+    glm::vec4 col = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f);
+
+    bool unlit = false;
+    bool visible = true;
+};
 
 struct mesh {
     vector<glm::vec3> vertices;
@@ -15,7 +37,7 @@ struct mesh {
     vector<glm::vec3> normals;
     vector<glm::vec2> texcoords;
 
-    unsigned int VAO, VBO, EBO;
+    unsigned int VAO, VBO, EBO = 0;
     int indexCount = 0;
 
     void create() {
@@ -107,6 +129,84 @@ struct mesh {
 
         return m;
     }
+
+    static mesh import(string path) {
+        mesh m;
+
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::material_t> materials;
+        std::string err;
+
+        bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &err, path.c_str(), NULL);
+
+        if (!success) {
+            log(ERRO, ("Failed to load obj mesh from path '" + path + "', Error: " + err).c_str());
+            return m;
+        }
+
+        for (const auto& shape : shapes) {
+            for (const auto& index : shape.mesh.indices) {
+                glm::vec3 vertex_pos = {
+                    attrib.vertices[3 * index.vertex_index + 0],
+                    attrib.vertices[3 * index.vertex_index + 1],
+                    attrib.vertices[3 * index.vertex_index + 2]
+                };
+
+                glm::vec3 vertex_normal = {};
+                glm::vec2 vertex_uv = {};
+
+                if (index.normal_index >= 0) {
+                    vertex_normal.x = attrib.normals[3 * index.normal_index + 0];
+                    vertex_normal.y = attrib.normals[3 * index.normal_index + 1];
+                    vertex_normal.z = attrib.normals[3 * index.normal_index + 2];
+                } else {
+                    log(WARN, ("Mesh '" + path + "' does not have normal vertex attributes").c_str());
+                }
+
+                if (index.texcoord_index >= 0) {
+                    vertex_uv.x = attrib.texcoords[2 * index.texcoord_index + 0];
+                    vertex_uv.y = attrib.texcoords[2 * index.texcoord_index + 1];
+                } else {
+                    log(WARN, ("Mesh '" + path + "' does not have UV vertex attributes attributes").c_str());
+                }
+
+                m.vertices.push_back(vertex_pos);
+                m.normals.push_back(vertex_normal);
+                m.texcoords.push_back(vertex_uv);
+                m.indices.push_back((unsigned int)m.indices.size());
+            }
+        }
+
+        return m;
+    }
+
+    void drawInstanced(int count) {
+        glBindVertexArray(VAO);
+        glDrawElementsInstanced(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0, count);
+        glBindVertexArray(0);
+    }
+};
+
+struct object {
+    object(string path) {
+        this->mesh = mesh::import(std::move(path));
+        this->props = properties();
+    }
+
+    object() {
+        this->mesh = mesh::cube();
+        this->props = properties();
+    }
+
+    void create(uint64_t id) {
+        this->mesh.create();
+        this->id = id;
+    }
+
+    mesh mesh;
+    properties props;
+    uint64_t id;
 };
 
 class engine {
@@ -127,29 +227,54 @@ public:
     void update();
     void render();
 
+    uint64_t genHandle() {
+        handle_ctr++;
+        return handle_ctr;
+    }
+
     double startup = 0;
     double lastframe = 0;
+    double dt = 0;
+    float cameraSpeed = 5.0f;
 
     glm::ivec2 winSize = {800, 600};
+
+    glm::vec3 camPos = {3, 10, 3};
+    glm::vec3 camTarget = {0, 0, 0};
+    glm::vec3 cameraTargetOffset = {-1, -4, -1};
+    glm::ivec2 worldSize = {100, 100};
+
+    world *w = NULL;
+
+    std::unordered_map<uint64_t, object> renderables;
+
+    mesh tileMesh;
+    unsigned int tileInstVBO = 0;
+    int tilecount;
 private:
     int init();
+
+    uint64_t handle_ctr = 0;
 
     GLFWwindow* window;
 
     unsigned int shader_program;
 
     //uniforms
-    unsigned int viewLoc;
-    unsigned int projLoc;
-    unsigned int modelLoc;
-    unsigned int camPosLoc;
-
-    glm::vec3 camPos = {3, 2, 3};
-    glm::vec3 camTarget = {0, 0, 0};
+    unsigned int viewLoc = 0;
+    unsigned int projLoc = 0;
+    unsigned int modelLoc = 0;
+    unsigned int camPosLoc = 0;
+    unsigned int colLoc = 0;
+    unsigned int litLoc = 0;
+    unsigned int instLoc = 0;
 
     float FOV = 70.0f;
 
-    mesh cube;
+    int lastframec = 0;
+    int frames = 0;
+
+    double lastframeT=0;
 };
 
 #endif

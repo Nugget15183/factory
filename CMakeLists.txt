@@ -21,6 +21,9 @@ add_executable(factory src/main.cpp
         src/engine.cpp
         src/engine.h
         src/util.h
-        src/stb_image.h)
+        src/stb_image.h
+        src/tiny_obj_loader.h
+        src/world.cpp
+        src/world.h)
 
 target_link_libraries(factory PRIVATE glfw glad glm)

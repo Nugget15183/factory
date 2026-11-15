@@ -21,6 +21,104 @@ void setWindowCallbacks(GLFWwindow* window) {
     });
 }
 
+void loadWorld(engine* e) {
+    double world_start = glfwGetTime();
+
+    std::vector<tileInst> inst;
+    inst.reserve(e->worldSize.x * e->worldSize.y);
+
+    e->w = new world(e->worldSize.x, e->worldSize.y);
+    log(INFO, ("World loaded successfully in " + to_string(glfwGetTime() - world_start) + "s").c_str());
+
+    double obj_start = glfwGetTime();
+    log(INFO, "Loading objects...");
+
+    object grid = object("resources/meshes/grid.obj");
+    grid.create(e->genHandle());
+
+    grid.props.unlit=true;
+    grid.props.col=glm::vec4(0.8f, 0.8f, 0.8f, 0.5f);
+    grid.props.visible=false;
+
+    e->renderables.insert({grid.id, grid});
+
+    for (int x = -e->worldSize.x / 2; x < -e->worldSize.x / 2 + e->worldSize.x; x++) {
+        for (int y = -e->worldSize.y / 2; y < -e->worldSize.y / 2 + e->worldSize.y; y++) {
+            glm::vec4 col = {0,0,0,1};
+            cellType c = e->w->getCell({x,y});
+            switch (c) {
+                case GROUND: {
+                    col = {0.23f, 0.16f, 0.13f, 1.0f};
+                    break;
+                } case IRON: {
+                    col = {0.3f, 0.31f, 0.33f, 1.0f};
+                    break;
+                } case COAL: {
+                    col = {0.2f, 0.2f, 0.2f, 1.0f};
+                    break;
+                } case COPPER: {
+                    col = {0.72f, 0.45f, 0.2f, 1.0f};
+                    break;
+                } case OBSTRUCTED: {
+                    col = {0,0,0,1};
+                }
+            }
+
+            inst.push_back({glm::vec3(x, 0, y), col});
+        }
+    }
+
+    e->tileMesh = mesh::cube();
+    e->tileMesh.create();
+    e->tilecount=(int)inst.size();
+
+    glGenBuffers(1, &e->tileInstVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, e->tileInstVBO);
+    glBufferData(GL_ARRAY_BUFFER, inst.size() * sizeof(tileInst), inst.data(), GL_STATIC_DRAW);
+
+    glBindVertexArray(e->tileMesh.VAO);
+
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(tileInst), (void*)offsetof(tileInst, pos));
+    glVertexAttribDivisor(3, 1);
+
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(tileInst), (void*)offsetof(tileInst, col));
+    glVertexAttribDivisor(4, 1);
+
+    glBindVertexArray(0);
+
+    log(INFO, ("Loaded objects in " + to_string(glfwGetTime() - obj_start) + "s").c_str());
+}
+
+void checkKeyInputs(engine* e) {
+    GLFWwindow &w = e->getWindow();
+
+    if (glfwGetKey(&w, GLFW_KEY_ESCAPE) == GLFW_PRESS) {glfwSetWindowShouldClose(&w, true);}
+
+    glm::vec2 input = {};
+
+    if (glfwGetKey(&w, GLFW_KEY_W) == GLFW_PRESS) {input.y=e->cameraSpeed;}
+    if (glfwGetKey(&w, GLFW_KEY_A) == GLFW_PRESS) {input.x=-e->cameraSpeed;}
+    if (glfwGetKey(&w, GLFW_KEY_S) == GLFW_PRESS) {input.y=-e->cameraSpeed;}
+    if (glfwGetKey(&w, GLFW_KEY_D) == GLFW_PRESS) {input.x=e->cameraSpeed;}
+
+    if (glm::length(input) > 0) {
+       input = glm::normalize(input);
+
+        glm::vec3 fw = e->cameraTargetOffset;
+        fw.y=0;
+        fw=glm::normalize(fw);
+
+        glm::vec3 rt = glm::normalize(glm::cross(fw, glm::vec3(0, 1, 0)));
+
+        glm::vec3 move = (fw * input.y + rt * input.x)  * e->cameraSpeed * (float)e->dt;
+        e->camPos+=move;
+    }
+
+    e->camTarget = e->camPos + e->cameraTargetOffset;
+}
+
 int engine::init() {
     log(INFO, "Initalizing...");
 
@@ -46,7 +144,7 @@ int engine::init() {
     string rv = readFile("resources/main.vert");
     string rf =  readFile("resources/main.frag");
     const GLchar *vert_src = rv.c_str();
-    const GLchar *frag_src =rf.c_str();
+    const GLchar *frag_src = rf.c_str();
 
     unsigned int vert_shader=glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vert_shader, 1, &vert_src, NULL);
@@ -100,7 +198,11 @@ int engine::init() {
     projLoc = glGetUniformLocation(shader_program, "proj");
     modelLoc = glGetUniformLocation(shader_program, "model");
 
+    colLoc = glGetUniformLocation(shader_program, "baseCol");
+    litLoc = glGetUniformLocation(shader_program, "unlit");
     camPosLoc = glGetUniformLocation(shader_program, "camPosition");
+
+    instLoc = glGetUniformLocation(shader_program, "instanced");
 
     //opengl settings and misc stuff
     stbi_set_flip_vertically_on_load(true);
@@ -119,9 +221,10 @@ int engine::init() {
 
     startup=time;
     lastframe=time;
+    lastframeT=time;
 
-    cube = mesh::cube();
-    cube.create();
+    log(INFO, "Loading world...");
+    loadWorld(this);
 
     return 0;
 }
@@ -129,14 +232,34 @@ int engine::init() {
 void engine::close() {
     log(INFO, "Closing...");
 
+    double duration = glfwGetTime() - startup;
+
     glfwDestroyWindow(window);
     glfwTerminate();
 
-    log(INFO, ("Session duration: " + to_string(glfwGetTime() - startup)).c_str());
+    log(INFO, "--- Session Info ---");
+    log(INFO, ("Session duration: " + to_string(duration)).c_str());
+    log(INFO, ("Average FPS: " + to_string(floor(frames / duration))).c_str());
 }
 
 void engine::update() {
     glfwPollEvents();
+
+    frames++;
+
+    if (glfwGetTime() - lastframe >= 1.0f) {
+        lastframe = glfwGetTime();
+
+        int fps = frames - lastframec;
+        lastframec = frames;
+
+        glfwSetWindowTitle(window, string("Factory -:- FPS " + to_string(fps)).c_str());
+    }
+
+    checkKeyInputs(this);
+
+    dt = glfwGetTime() - lastframeT;
+    lastframeT = glfwGetTime();
 }
 
 void engine::render() {
@@ -148,14 +271,38 @@ void engine::render() {
     float aspect = winSize.y > 0 ? (float)winSize[0] / (float)winSize[1] : 1.0f;
     glm::mat4 proj = glm::perspective(glm::radians(FOV), aspect, 0.01f, 1000.0f);
     glm::mat4 view = glm::lookAt(camPos, camTarget, glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 model = glm::rotate(glm::mat4(1.0f), (float)glfwGetTime(), glm::vec3(0, 1, 0));
 
     glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
     glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
     glUniform3fv(camPosLoc, 1, glm::value_ptr(camPos));
 
-    cube.draw();
+    //draw instanced ground
+    glUniform1i(instLoc, 1);
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
+    glUniform1i(litLoc, 0);
+    tileMesh.drawInstanced(tilecount);
+    glUniform1i(instLoc, 0);
+
+    //draw everything else
+    for (auto& [id, obj] : renderables) {
+        if (!obj.props.visible) {continue;}
+
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, obj.props.pos);
+
+        model = glm::rotate(model, glm::radians(obj.props.rot.y), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::rotate(model, glm::radians(obj.props.rot.x), glm::vec3(1.0f, 0.0f, 0.0f));
+        model = glm::rotate(model, glm::radians(obj.props.rot.z), glm::vec3(0.0f, 0.0f, 1.0f));
+
+        model = glm::scale(model, obj.props.scale);
+
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+        glUniform4fv(colLoc, 1, glm::value_ptr(obj.props.col));
+        glUniform1i(litLoc, obj.props.unlit);
+
+        obj.mesh.draw();
+    }
 
     glfwSwapBuffers(window);
 }
