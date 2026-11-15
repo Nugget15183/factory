@@ -56,15 +56,18 @@ struct buildingDef {
 
     float height;
     bool needsOre;
+
+    bool hasOutput;
+    bool hasInput;
 };
 
 inline const buildingDef& defOf(objectType t) {
     static const buildingDef defs[OBJECT_COUNT] = {
-        {"Conveyor", {0.3f, 0.3f, 0.35f, 1}, 0.15f, false},
-        {"Drill", {0.8f, 0.7f, 0.2f, 1}, 0.8f, true},
-        {"Constructor", {0.3f, 0.5f, 0.8f, 1}, 0.9f, false},
-        {"Smeltery", {0.8f, 0.3f, 0.2f, 1}, 0.9f, false},
-        {"Seller", {0.2f, 0.7f, 0.3f, 1}, 0.6f, false},
+        {"Conveyor", {0.3f, 0.3f, 0.35f, 1}, 0.15f, false, true, true},
+        {"Drill", {0.8f, 0.7f, 0.2f, 1}, 0.8f, true, true, false},
+        {"Constructor", {0.3f, 0.5f, 0.8f, 1}, 0.9f, false, true, true},
+        {"Smeltery", {0.8f, 0.3f, 0.2f, 1}, 0.9f, false, true, true},
+        {"Seller", {0.2f, 0.7f, 0.3f, 1}, 0.6f, false, false, true},
     };
     return defs[t];
 }

@@ -6,10 +6,16 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
 
 #include "stb_image.h"
 
 using namespace util;
+
+static const glm::vec4 input_col(0.2f, 0.5f, 1.0f, 1.0f);
+static const glm::vec4 output_col(1.0f, 0.6f, 0.1f, 1.0f);
 
 void setWindowCallbacks(GLFWwindow* window) {
     glfwSetFramebufferSizeCallback(window, [](GLFWwindow* window, int width, int height) {
@@ -140,6 +146,12 @@ int engine::init() {
     glViewport(0, 0, winSize[0], winSize[1]);//size of the window
     setWindowCallbacks(window);
 
+    //ImGui setup
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+
     //Shader initalization
     string rv = readFile("resources/main.vert");
     string rf =  readFile("resources/main.frag");
@@ -234,6 +246,10 @@ void engine::close() {
 
     double duration = glfwGetTime() - startup;
 
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
     glfwDestroyWindow(window);
     glfwTerminate();
 
@@ -242,8 +258,148 @@ void engine::close() {
     log(INFO, ("Average FPS: " + to_string(floor(frames / duration))).c_str());
 }
 
+void engine::drawPorts(objectType t, glm::ivec2 pos, direction dir, float alpha) {
+    const buildingDef &d = defOf(t);
+    glm::ivec2 f = dirVec(dir);
+
+    float y = 0.5f + d.height * 0.5f;
+
+    glm::vec3 base(pos.x, y, pos.y);
+    glm::vec3 size(0.3f);
+
+    if (d.hasOutput) {
+        glm::vec4 col = output_col;
+        col.a = alpha;
+
+        drawCube(base + glm::vec3(f.x, 0, f.y) * 0.5f, size, 0.0f, col, true);
+    }
+
+    if (d.hasInput) {
+        glm::vec4 col = input_col;
+        col.a = alpha;
+
+        drawCube(base - glm::vec3(f.x, 0, f.y) * 0.5f, size, 0.0f, col, true);
+    }
+}
+
+void engine::drawUI() {
+    ImGui::SetNextWindowPos(ImVec2((float)winSize.x * 0.5f, (float)winSize.y - 10), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+
+    ImGui::Begin("Hotbar", nullptr,
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoScrollbar
+    );
+
+    for (int i = 0; i < OBJECT_COUNT; i++) {
+        const buildingDef &d = defOf((objectType)i);
+
+        if (i) ImGui::SameLine();
+
+        ImGui::PushID(i);
+
+        ImVec4 col(d.col.r, d.col.g, d.col.b, 1.0f);
+
+        ImGui::PushStyleColor(ImGuiCol_Button, selected == i ? col : ImVec4(col.x * 0.5f, col.y * 0.5f, col.z * 0.5f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col);
+
+        if (ImGui::Button(d.name, ImVec2(80, 44))) {
+            selected = selected == i ? -1 : i;
+        }
+
+        ImGui::PopStyleColor(2);
+        ImGui::PopID();
+    }
+
+    ImGui::Text("LMB place | RMB remove | R rotate | 1-%d select | Q deselect", (int)OBJECT_COUNT);
+    ImGui::End();
+}
+
+void engine::handlePlacement() {
+    hoverValid = false;
+    if (ImGui::GetIO().WantCaptureMouse) return;
+
+    //normalize cursor pos
+    double mx, my;
+    int ww, wh;
+    glfwGetWindowSize(window, &ww, &wh);
+    glfwGetCursorPos(window, &mx, &my);
+
+    if (ww <= 0 || wh <= 0) return;
+
+    float nx = 2.0f * (float)mx / ww - 1.0f;
+    float ny = 1.0f - 2.0f * (float)my / wh;
+
+    glm::mat4 inv = glm::inverse(projM * viewM);
+
+    glm::vec4 a = inv * glm::vec4(nx, ny, -1, 1);
+    glm::vec4 b = inv * glm::vec4(nx, ny, 1, 1);
+
+    glm::vec3 p0 = glm::vec3(a)/a.w;
+    glm::vec3 p1 = glm::vec3(b)/b.w;
+
+    glm::vec3 dir = glm::normalize(p1 - p0);
+
+    if (dir.y >= -1e-5f) return; //check if ray points away from ground
+
+    float t = (0.5f - p0.y) / dir.y;
+    glm::vec3 hit = p0 + dir * t;
+
+    hoverCell = {
+        (int)floor(hit.x + 0.5f),
+        (int)floor(hit.z + 0.5f),
+    };
+
+    hoverValid = w->inBounds(hoverCell);
+    if (!hoverValid) return;
+
+    if (selected >= 0 && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+        w->place((objectType)selected, hoverCell, placeDir);
+    }
+
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+        w->remove(hoverCell);
+    }
+
+    bool r = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
+    if (r && !prevR) placeDir = (direction)(((int)placeDir + 1) % 4);
+    prevR = r;
+
+    for (int i = 0; i < OBJECT_COUNT; i++) {
+        if (glfwGetKey(window, GLFW_KEY_1 + i) == GLFW_PRESS) {
+            selected = i;
+        }
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+        selected = -1;
+    }
+}
+
+void engine::drawCube(glm::vec3 pos, glm::vec3 scale, float yawDeg, glm::vec4 col, bool unlit) {
+    glm::mat4 m = glm::translate(glm::mat4(1.0f), pos);
+    m = glm::rotate(m, glm::radians(yawDeg), glm::vec3(0, 1, 0));
+    m = glm::scale(m, scale);
+
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(m));
+    glUniform4fv(colLoc, 1, glm::value_ptr(col));
+    glUniform1i(litLoc, unlit);
+    tileMesh.draw();
+}
+
 void engine::update() {
     glfwPollEvents();
+
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    handlePlacement();
+    drawUI();
+
+    w->update(dt);
 
     frames++;
 
@@ -276,12 +432,39 @@ void engine::render() {
     glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
     glUniform3fv(camPosLoc, 1, glm::value_ptr(camPos));
 
+    projM = proj;
+    viewM = view;
+
     //draw instanced ground
     glUniform1i(instLoc, 1);
     glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
     glUniform1i(litLoc, 0);
     tileMesh.drawInstanced(tilecount);
     glUniform1i(instLoc, 0);
+
+    //draw buildings
+    for (auto &b : w->buildings()) {
+        if (!b) continue;
+
+        const buildingDef d = defOf(b->type);
+
+        float yaw = -(int)b->dir * 90.0f;
+
+        glm::vec3 pos(b->pos.x, 0.5f + d.height * 0.5f, b->pos.y);
+        drawCube(pos, {0.9f, d.height, 0.9f}, yaw, d.col, false);
+
+        drawPorts(b->type, b->pos, b->dir, 1.0f);
+    }
+
+    if (hoverValid && selected >= 0) {
+        const buildingDef &d = defOf((objectType)selected);
+        bool ok = w->canPlace((objectType)selected, hoverCell);
+
+        glm::vec4 col = ok ? glm::vec4(0.2f, 1.0f, 0.3f, 0.5f) : glm::vec4(1.0f, 0.2f, 0.2f, 0.5f);
+        drawCube({hoverCell.x, 0.5f + d.height * 0.5f, hoverCell.y},{0.9f, d.height, 0.9f}, -(int)placeDir * 90.0f, col, true);
+
+        drawPorts((objectType)selected, hoverCell, placeDir, 0.8f);
+    }
 
     //draw everything else
     for (auto& [id, obj] : renderables) {
@@ -303,6 +486,9 @@ void engine::render() {
 
         obj.mesh.draw();
     }
+
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     glfwSwapBuffers(window);
 }

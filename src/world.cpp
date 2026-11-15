@@ -23,7 +23,7 @@ bool world::remove(glm::ivec2 pos) {
 
 bool world::canPlace(objectType t, glm::ivec2 pos) {
     if (!inBounds(pos)) return false;
-    if (grid[idx(pos)].get() == nullptr) {return false;}
+    if (grid[idx(pos)].get()) {return false;}
 
     cellType c = cells[idx(pos)];
 

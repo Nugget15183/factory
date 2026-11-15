@@ -227,6 +227,10 @@ public:
     void update();
     void render();
 
+    void drawUI();
+
+    void drawPorts(objectType t, glm::ivec2 pos, direction dir, float alpha);
+
     uint64_t genHandle() {
         handle_ctr++;
         return handle_ctr;
@@ -236,6 +240,8 @@ public:
     double lastframe = 0;
     double dt = 0;
     float cameraSpeed = 5.0f;
+    int selected = -1;
+    bool hoverValid = false;
 
     glm::ivec2 winSize = {800, 600};
 
@@ -243,6 +249,9 @@ public:
     glm::vec3 camTarget = {0, 0, 0};
     glm::vec3 cameraTargetOffset = {-1, -4, -1};
     glm::ivec2 worldSize = {100, 100};
+
+    direction placeDir = NORTH;
+    glm::ivec2 hoverCell = {0,0};
 
     world *w = NULL;
 
@@ -259,6 +268,11 @@ private:
     GLFWwindow* window;
 
     unsigned int shader_program;
+
+    void handlePlacement();
+    void drawCube(glm::vec3 pos, glm::vec3 scale, float yawDeg, glm::vec4 col, bool unlit);
+    glm::mat4 projM = glm::mat4(1), viewM = glm::mat4(1);
+    bool prevR = false;
 
     //uniforms
     unsigned int viewLoc = 0;
