@@ -36,7 +36,6 @@ enum itemType {
 enum objectType {
     CONVEYOR,
     CONVEYOR_SPLIITER,
-    CONVEYOR_MERGER,
 
     DRILL,
 
@@ -76,6 +75,7 @@ struct building {
 
     int heldInCount = 0;
     int heldOutCount = 0;
+    int nextOut = 0;
 
     float progress = 0.0f;
 
@@ -105,6 +105,14 @@ struct buildingDef {
 
     //seconds to turn inputs (or nothing) into an output
     float convertTime = 1.0f;
+
+    bool anyInput() const {
+        return hasInputL || hasInputR || hasInput;
+    }
+
+    bool anyOutput() const {
+        return hasOutputL || hasOutputR || hasOutput;
+    }
 };
 
 inline const buildingDef& defOf(objectType t) {
@@ -117,8 +125,8 @@ inline const buildingDef& defOf(objectType t) {
             false,
             false,
             true,
-            false,
-            false,
+            true,
+            true,
             false,
             0.01f
         },
@@ -137,20 +145,6 @@ inline const buildingDef& defOf(objectType t) {
             0.01f
         },
 
-        {"Conveyor Merger",
-            {0.3f, 0.3f, 0.35f, 1},
-            0.15f,
-            false,
-            true,
-            true,
-            false,
-            true,
-            true,
-            true,
-            false,
-            0.01f
-        },
-
         {"Drill",
             {0.8f, 0.7f, 0.2f, 1},
             0.8f,
@@ -158,7 +152,7 @@ inline const buildingDef& defOf(objectType t) {
             true,
             false,
             false,
-            true,
+            false,
             false,
             false,
             true,
@@ -173,7 +167,7 @@ inline const buildingDef& defOf(objectType t) {
             false,
             false,
             true,
-            false,
+            true,
             true,
             true,
             0.1f
@@ -236,7 +230,7 @@ static itemType smeltResult(itemType in) {
     switch (in) {
         case IRON_ORE: return IRON_INGOT;
         case COPPER_ORE: return COPPER_INGOT;
-        default: NONE;
+        default: return NONE;
     }
 }
 
@@ -284,6 +278,38 @@ inline glm::ivec2 dirVec(direction d) {
         case SOUTH: return {0, 1};
         default: return {-1, 0};
     }
+}
+
+inline direction rotateRight(direction d) {
+    return (direction)(((int)d + 1) % 4);
+}
+
+inline direction rotateLeft(direction d) {
+    return (direction)(((int)d + 3) % 4);
+}
+
+inline int outputSides(const building &b, direction out[3]) {
+    const buildingDef &d = defOf(b.type);
+
+    int n = 0;
+
+    if (d.hasOutput) out[n++] = b.dir;
+    if (d.hasOutputL) out[n++] = rotateLeft(b.dir);
+    if (d.hasOutputR) out[n++] = rotateRight(b.dir);
+
+    return n;
+}
+
+inline int acceptsFrom(const building &f, direction side) {
+    const buildingDef &d = defOf(f.type);
+
+    if (f.type == CONVEYOR) return side != f.dir;
+
+    if (d.hasInput && side == getOpposite(f.dir)) return true;
+    if (d.hasInputL && side == getOpposite(f.dir)) return true;
+    if (d.hasInputR && side == getOpposite(f.dir)) return true;
+
+    return false;
 }
 
 inline const std::vector<recipe>& recipes() {

@@ -4,6 +4,8 @@
 
 #include "GLFW/glfw3.h"
 
+static int MAX_STACK = 20;
+
 building *world::getBuilding(glm::ivec2 pos) {
     if (!inBounds(pos)) return nullptr;
     return grid[idx(pos)].get();
@@ -33,27 +35,26 @@ bool world::canPlace(objectType t, glm::ivec2 pos) {
 }
 
 void world::update(float dt) {
+    double t = glfwGetTime();
+
     for (auto &b : grid) {
         if (!b)continue;
 
         const buildingDef &d = defOf(b->type);
 
-        double t = glfwGetTime();
-
         if (b->type == SELLER) {
             if (b->heldIn!=NONE && b->heldInCount>0) {
-                int value = sellPrice(b->heldIn);
-                money += value;
+                money += sellPrice(b->heldIn);
                 b->heldInCount--;
                 if (b->heldInCount==0) b->heldIn=NONE;
             }
             continue;
         }
 
-        if (!d.hasOutput) continue;
+        if (!d.anyOutput()) continue;
 
         itemType out = NONE;
-        int need = d.hasInput ? 1 : 0;
+        int need = d.anyInput() ? 1 : 0;
 
         switch (b->type) {
             case DRILL: {
@@ -85,7 +86,7 @@ void world::update(float dt) {
         float ct = d.doConversions ? d.convertTime : 0.0f;
 
         if (!ready) {
-            b->lastConversion = t; // don't bank idle time
+            b->lastConversion = t;
             b->progress = 0.0f;
         } else if (ct <= 0.0f || t - b->lastConversion >= ct) {
             if (d.hasInput) {
@@ -103,19 +104,28 @@ void world::update(float dt) {
 
         //moving items between buildings
         if (b->heldOut != NONE && b->heldOutCount > 0 && t - b->lastMoveOut >= d.moveTime) {
-            building *f = getBuilding(b->pos + dirVec(b->dir));
+            direction outs[3];
+            int n = outputSides(*b, outs);
 
-            if (f && defOf(f->type).hasInput) {
-                bool same  = f->heldIn == b->heldOut;
-                bool empty = f->heldIn == NONE;
+            for (int k = 0; k < n; k++) {
+                int i = (b->nextOut + k) % n;
+                direction side = outs[i];
 
-                if (same || empty) {
-                    f->heldIn = b->heldOut;
-                    f->heldInCount++;
-                    b->heldOutCount--;
-                    b->lastMoveOut = t;
-                    if (b->heldOutCount == 0) b->heldOut = NONE;
-                }
+                building *f = getBuilding(b->pos + dirVec(side));
+
+                if (!f || !acceptsFrom(*f, getOpposite(side))) continue;
+                if (f->heldIn != NONE && f->heldIn != b->heldOut) continue;
+                if (f->heldInCount >= MAX_STACK) continue;
+
+                f->heldIn = b->heldOut;
+                f->heldInCount++;
+
+                b->heldOutCount--;
+                if (b->heldOutCount == 0) b->heldOut = NONE;
+
+                b->lastMoveOut = t;
+                b->nextOut = (i + 1) % n;
+                break;
             }
         }
     }

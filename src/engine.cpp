@@ -260,27 +260,23 @@ void engine::close() {
 
 void engine::drawPorts(objectType t, glm::ivec2 pos, direction dir, float alpha) {
     const buildingDef &d = defOf(t);
-    glm::ivec2 f = dirVec(dir);
 
-    float y = 0.5f + d.height * 0.5f;
-
-
-    glm::vec3 base(pos.x, y, pos.y);
+    glm::vec3 base(pos.x, 0.5f + d.height * 0.5f, pos.y);
     glm::vec3 size(0.3f);
 
-    if (d.hasOutput) {
-        glm::vec4 col = output_col;
+    auto port = [&](direction side, glm::vec4 col) {
+        glm::ivec2 v = dirVec(side);
         col.a = alpha;
+        drawCube(base + glm::vec3(v.x, 0, v.y) * 0.5f, size, 0.0f, col, true);
+    };
 
-        drawCube(base + glm::vec3(f.x, 0, f.y) * 0.5f, size, 0.0f, col, true);
-    }
+    if (d.hasOutput) port(dir, output_col);
+    if (d.hasOutputL) port(rotateLeft(dir), output_col);
+    if (d.hasOutputR) port(rotateRight(dir), output_col);
 
-    if (d.hasInput) {
-        glm::vec4 col = input_col;
-        col.a = alpha;
-
-        drawCube(base - glm::vec3(f.x, 0, f.y) * 0.5f, size, 0.0f, col, true);
-    }
+    if (d.hasInput) port(getOpposite(dir), input_col);
+    if (d.hasInputL) port(rotateLeft(dir), input_col);
+    if (d.hasInputR) port(rotateRight(dir), input_col);
 }
 
 void engine::drawUI() {
@@ -371,7 +367,7 @@ void engine::drawUI() {
             ImGui::Separator();
         }
 
-        if (d.hasInput) {
+        if (d.anyInput()) {
             ImGui::TextColored(ImVec4(input_col.r, input_col.g, input_col.b, 1), "Input");
 
             if (b->heldInCount > 0 && b->heldIn != NONE) {
@@ -381,7 +377,7 @@ void engine::drawUI() {
             }
         }
 
-        if (d.hasOutput) {
+        if (d.anyOutput()) {
             ImGui::TextColored(ImVec4(output_col.r, output_col.g, output_col.b, 1), "Output");
 
             if (b->heldOutCount > 0 && b->heldOut != NONE) {
