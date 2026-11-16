@@ -106,6 +106,9 @@ cmake -S . -B build
 cmake --build build
 ```
 
+### Download
+Go [HERE](https://github.com/Nugget15183/factory/releases/tag/alpha), and download the latest release. Once downloaded, unzip the downloaded file and run it.
+
 The game loads shaders and meshes from the `resources/` folder using relative paths, so run the `factory` executable from a directory that contains `resources/`.
 
 ## Project structure
@@ -132,7 +135,3 @@ resources/
 - Each building has a single input slot, so recipes use one item type
 - Merging different item types onto one belt can block it until the mismatched item drains
 - Saving and loading aren't implemented
-
-## License
-
-Add your license here (for example, MIT) and include a `LICENSE` file in the repository.
