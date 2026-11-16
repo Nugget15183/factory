@@ -264,6 +264,7 @@ void engine::drawPorts(objectType t, glm::ivec2 pos, direction dir, float alpha)
 
     float y = 0.5f + d.height * 0.5f;
 
+
     glm::vec3 base(pos.x, y, pos.y);
     glm::vec3 size(0.3f);
 
@@ -283,6 +284,7 @@ void engine::drawPorts(objectType t, glm::ivec2 pos, direction dir, float alpha)
 }
 
 void engine::drawUI() {
+    //placement ui
     ImGui::SetNextWindowPos(ImVec2((float)winSize.x * 0.5f, (float)winSize.y - 10), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
 
     ImGui::Begin("Hotbar", nullptr,
@@ -315,6 +317,88 @@ void engine::drawUI() {
 
     ImGui::Text("LMB place | RMB remove | R rotate | 1-%d select | Q deselect", (int)OBJECT_COUNT);
     ImGui::End();
+
+    //inspector window
+    if (hasInspected) {
+        building *b = w->getBuilding(inspectedCell);
+
+        //building doesnt exist
+        if (!b) {hasInspected = false; return;}
+
+        const buildingDef &d = defOf(b->type);
+
+        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(240, 0), ImGuiCond_FirstUseEver);
+
+        bool open = true;
+
+        ImGui::Begin(d.name, &open, ImGuiWindowFlags_AlwaysAutoResize);
+
+        ImGui::Text("Position: (%d, %d)", b->pos.x, b->pos.y);
+        ImGui::Text("Facing: %s", dirName(b->dir));
+
+        ImGui::Separator();
+
+        if (b->type == CONSTRUCTOR) {
+            const recipe *cur = recipeFor(b->convertTo);
+
+            ImGui::Text("Recipe");
+            ImGui::SetNextItemWidth(-1);
+
+            if (ImGui::BeginCombo("##recipe", cur ? itemName(cur->out) : "None Selected")) {
+                if (ImGui::Selectable("None", b->convertTo == NONE)) b->convertTo = NONE;
+
+                for (const recipe &r : recipes()) {
+                    char label[96];
+                    snprintf(label, sizeof(label), "%s (%d x %s)", itemName(r.out), r.inCount, itemName(r.in));
+
+                    bool sel = b->convertTo == r.out;
+
+                    if (ImGui::Selectable(label, sel)) b->convertTo = r.out;
+                    if (sel) ImGui::SetItemDefaultFocus();
+                }
+
+                ImGui::EndCombo();
+            }
+
+            if (cur) ImGui::TextDisabled("Needs %d x %s", cur->inCount, itemName(cur->in));
+
+            if (b->heldInCount > 0 && ImGui::SmallButton("Clear Input")) {
+                b->heldIn = NONE;
+                b->heldInCount = 0;
+            }
+
+            ImGui::Separator();
+        }
+
+        if (d.hasInput) {
+            ImGui::TextColored(ImVec4(input_col.r, input_col.g, input_col.b, 1), "Input");
+
+            if (b->heldInCount > 0 && b->heldIn != NONE) {
+                ImGui::Text("  %s x%d", itemName(b->heldIn), b->heldInCount);
+            } else {
+                ImGui::TextDisabled(" Empty");
+            }
+        }
+
+        if (d.hasOutput) {
+            ImGui::TextColored(ImVec4(output_col.r, output_col.g, output_col.b, 1), "Output");
+
+            if (b->heldOutCount > 0 && b->heldOut != NONE) {
+                ImGui::Text("  %s x%d", itemName(b->heldOut), b->heldOutCount);
+            } else {
+                ImGui::TextDisabled(" Empty");
+            }
+        }
+
+        ImGui::Separator();
+
+        ImGui::ProgressBar(b->progress, ImVec2(-1, 0), "Progress");
+
+        ImGui::End();
+
+        if (!open)hasInspected=false;
+    }
 }
 
 void engine::handlePlacement() {
@@ -354,6 +438,15 @@ void engine::handlePlacement() {
 
     hoverValid = w->inBounds(hoverCell);
     if (!hoverValid) return;
+
+    if (selected < 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (w->getBuilding(hoverCell)) {
+            inspectedCell = hoverCell;
+            hasInspected = true;
+        } else {
+            hasInspected = false;
+        }
+    }
 
     if (selected >= 0 && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
         w->place((objectType)selected, hoverCell, placeDir);
@@ -464,6 +557,13 @@ void engine::render() {
         drawCube({hoverCell.x, 0.5f + d.height * 0.5f, hoverCell.y},{0.9f, d.height, 0.9f}, -(int)placeDir * 90.0f, col, true);
 
         drawPorts((objectType)selected, hoverCell, placeDir, 0.8f);
+    }
+
+    if (hasInspected) {
+        if (building *ib = w->getBuilding(inspectedCell)) {
+            const buildingDef &id = defOf(ib->type);
+            drawCube({inspectedCell.x, 0.5f + id.height * 0.5f, inspectedCell.y},{1.0f, id.height + 0.05f, 1.0f}, -(int)ib->dir * 90.0f,{1, 1, 1, 0.25f}, true);
+        }
     }
 
     //draw everything else

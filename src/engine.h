@@ -267,12 +267,8 @@ private:
 
     GLFWwindow* window;
 
-    unsigned int shader_program;
-
     void handlePlacement();
     void drawCube(glm::vec3 pos, glm::vec3 scale, float yawDeg, glm::vec4 col, bool unlit);
-    glm::mat4 projM = glm::mat4(1), viewM = glm::mat4(1);
-    bool prevR = false;
 
     //uniforms
     unsigned int viewLoc = 0;
@@ -282,13 +278,20 @@ private:
     unsigned int colLoc = 0;
     unsigned int litLoc = 0;
     unsigned int instLoc = 0;
+    unsigned int shader_program;
 
     float FOV = 70.0f;
 
     int lastframec = 0;
     int frames = 0;
 
-    double lastframeT=0;
+    double lastframeT = 0;
+    bool hasInspected = false;
+
+    bool prevR = false;
+
+    glm::mat4 projM = glm::mat4(1), viewM = glm::mat4(1);
+    glm::ivec2 inspectedCell = {0,0};
 };
 
 #endif

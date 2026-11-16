@@ -32,9 +32,93 @@ bool world::canPlace(objectType t, glm::ivec2 pos) {
     return true;
 }
 
-
 void world::update(float dt) {
+    for (auto &b : grid) {
+        if (!b)continue;
 
+        const buildingDef &d = defOf(b->type);
+
+        double t = glfwGetTime();
+
+        if (b->type == SELLER) {
+            if (b->heldIn!=NONE && b->heldInCount>0) {
+                int value = sellPrice(b->heldIn);
+                money += value;
+                b->heldInCount--;
+                if (b->heldInCount==0) b->heldIn=NONE;
+            }
+            continue;
+        }
+
+        if (!d.hasOutput) continue;
+
+        itemType out = NONE;
+        int need = d.hasInput ? 1 : 0;
+
+        switch (b->type) {
+            case DRILL: {
+                out = b->convertTo;
+                break;
+            }
+            case SMELTERY: {
+                out = smeltResult(b->heldIn);
+                break;
+            }
+            case CONSTRUCTOR: {
+                const recipe *r = recipeFor(b->convertTo);
+
+                if (r && b->heldIn == r->in) {
+                    out = r->out;
+                    need = r->inCount;
+                }
+
+                break;
+            }
+            default: {
+                out = b->heldIn;
+                break;
+            }
+        }
+
+        bool ready = out != NONE && b->heldInCount >= need && (b->heldOut == NONE || b->heldOut == out);
+
+        float ct = d.doConversions ? d.convertTime : 0.0f;
+
+        if (!ready) {
+            b->lastConversion = t; // don't bank idle time
+            b->progress = 0.0f;
+        } else if (ct <= 0.0f || t - b->lastConversion >= ct) {
+            if (d.hasInput) {
+                b->heldInCount--;
+                if (b->heldInCount == 0) b->heldIn = NONE;
+            }
+
+            b->heldOut = out;
+            b->heldOutCount++;
+            b->lastConversion = t;
+            b->progress = 0.0f;
+        } else {
+            b->progress = (float)((t - b->lastConversion) / ct);
+        }
+
+        //moving items between buildings
+        if (b->heldOut != NONE && b->heldOutCount > 0 && t - b->lastMoveOut >= d.moveTime) {
+            building *f = getBuilding(b->pos + dirVec(b->dir));
+
+            if (f && defOf(f->type).hasInput) {
+                bool same  = f->heldIn == b->heldOut;
+                bool empty = f->heldIn == NONE;
+
+                if (same || empty) {
+                    f->heldIn = b->heldOut;
+                    f->heldInCount++;
+                    b->heldOutCount--;
+                    b->lastMoveOut = t;
+                    if (b->heldOutCount == 0) b->heldOut = NONE;
+                }
+            }
+        }
+    }
 }
 
 world::world(int w, int h) {
@@ -74,6 +158,15 @@ bool world::place(objectType t, glm::ivec2 pos, direction d) {
     b->pos = pos;
     b->dir = d;
     b->type = t;
+
+    if (t==DRILL) {
+        switch (cells[idx(pos)]) {
+            case COAL: b->convertTo = COAL_ORE; break;
+            case IRON: b->convertTo = IRON_ORE; break;
+            case COPPER: b->convertTo = COPPER_ORE; break;
+            default: break;
+        }
+    }
 
     grid[idx(pos)] = std::move(b);
     return true;
