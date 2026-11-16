@@ -2,7 +2,9 @@
 
 A small factory-automation game written from scratch in C++ and OpenGL. Drill ore out of the ground, smelt it, craft it into parts, and ship it down conveyor belts to sell for cash, then reinvest in a bigger production line.
 
-<!-- Add a screenshot or GIF here, e.g.: ![Factory screenshot](docs/screenshot.png) -->
+<img width="578" height="426" alt="Screenshot 2026-11-15 210233" src="https://github.com/user-attachments/assets/b3973e44-c032-4d9b-a74d-101eeb9af739" />
+<img width="808" height="638" alt="Screenshot 2026-11-15 215127" src="https://github.com/user-attachments/assets/11aeca5d-99de-4a23-89ae-095768453a30" />
+<img width="804" height="633" alt="Screenshot 2026-11-15 215222" src="https://github.com/user-attachments/assets/a8339d94-e2ed-4595-88a1-9f7bcc4bb096" />
 
 ## Features
 
