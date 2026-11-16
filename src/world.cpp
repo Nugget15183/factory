@@ -19,6 +19,11 @@ cellType world::getCell(glm::ivec2 pos) const {
 
 bool world::remove(glm::ivec2 pos) {
     if (!inBounds(pos) || grid[idx(pos)] == nullptr) return false;
+
+    objectType t = grid[idx(pos)]->type;
+    money += costOf(t) / 2;
+    counts[t]--;
+
     grid[idx(pos)].reset();
     return true;
 }
@@ -44,8 +49,15 @@ void world::update(float dt) {
 
         if (b->type == SELLER) {
             if (b->heldIn!=NONE && b->heldInCount>0) {
-                money += sellPrice(b->heldIn);
+                int v = sellPrice(b->heldIn);
+                money += v;
+                totalEarned += v;
+
+                itemsSold++;
+                soldCount[b->heldIn]++;
+
                 b->heldInCount--;
+
                 if (b->heldInCount==0) b->heldIn=NONE;
             }
             continue;
@@ -55,6 +67,7 @@ void world::update(float dt) {
 
         itemType out = NONE;
         int need = d.anyInput() ? 1 : 0;
+        int produced = 1;
 
         switch (b->type) {
             case DRILL: {
@@ -71,6 +84,7 @@ void world::update(float dt) {
                 if (r && b->heldIn == r->in) {
                     out = r->out;
                     need = r->inCount;
+                    produced = r->outCount;
                 }
 
                 break;
@@ -81,7 +95,7 @@ void world::update(float dt) {
             }
         }
 
-        bool ready = out != NONE && b->heldInCount >= need && (b->heldOut == NONE || b->heldOut == out);
+        bool ready = out != NONE && b->heldInCount >= need && b->heldOutCount + produced <= MAX_STACK && (b->heldOut == NONE || b->heldOut == out);
 
         float ct = d.doConversions ? d.convertTime : 0.0f;
 
@@ -89,9 +103,12 @@ void world::update(float dt) {
             b->lastConversion = t;
             b->progress = 0.0f;
         } else if (ct <= 0.0f || t - b->lastConversion >= ct) {
-            if (d.hasInput) {
-                b->heldInCount--;
-                if (b->heldInCount == 0) b->heldIn = NONE;
+            if (need > 0) {
+                b->heldInCount -= need;
+                if (b->heldInCount == 0) {
+                    b->heldInCount = 0;
+                    b->heldIn = NONE;
+                }
             }
 
             b->heldOut = out;
@@ -163,6 +180,9 @@ world::world(int w, int h) {
 
 bool world::place(objectType t, glm::ivec2 pos, direction d) {
     if (!canPlace(t, pos)) return false;
+
+    money -= costOf(t);
+    counts[t]++;
 
     std::unique_ptr<building> b = std::make_unique<building>();
     b->pos = pos;

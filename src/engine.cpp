@@ -17,17 +17,74 @@ using namespace util;
 static const glm::vec4 input_col(0.2f, 0.5f, 1.0f, 1.0f);
 static const glm::vec4 output_col(1.0f, 0.6f, 0.1f, 1.0f);
 
-void setWindowCallbacks(GLFWwindow* window) {
-    glfwSetFramebufferSizeCallback(window, [](GLFWwindow* window, int width, int height) {
-        engine* ptr = (engine*)glfwGetWindowUserPointer(window);
+struct goal {
+    const char *title;
+    const char *hint;
 
-        ptr->winSize = { width, height };
+    bool (*check)(const world &);
+};
+
+static const std::vector<goal> &goals() {
+    static const std::vector<goal> g{
+        {
+            "Place a drill",
+            "Drills only work on ore tiles, gray = iron, dark gray = coal, orange = copper. Select the drill in your hotbar and place one on any ore tile.",
+            [](const world &w) { return w.buildingCount(DRILL) >= 1; },
+        },
+
+        {
+            "Place a seller",
+            "Sellers turn items into money, put it a few tiles away from your drill.",
+            [](const world &w) { return w.buildingCount(SELLER) >= 1; },
+        },
+
+        {
+            "Sell your first item",
+            "Run conveyors from the drill to your seller, Blue boxes are inputs, or directions from which that building can take in materials. Orange boxes are outputs, or directions from which that building sends materials.",
+            [](const world &w) { return w.itemsSold >= 1; },
+        },
+
+        {
+            "Earn 100$",
+            "Place more drills to speed things up, but note removing buildings only returns half its value.",
+            [](const world &w) { return w.totalEarned >= 100; },
+        },
+
+        {
+            "Sell an Iron Ingot",
+            "Place a smeltery between an iron ore drill, and the seller. It turns raw ore to ingots which sell for more and can be used to craft more.",
+            [](const world &w) { return w.soldCount[IRON_INGOT] >= 1; },
+        },
+
+        {
+            "Sell a crafted part",
+            "Place a constructor, select a recipe, and feed it the items it needs, then sell the result.",
+            [](const world &w) {
+                return w.soldCount[IRON_PLATE] + w.soldCount[IRON_ROD] + w.soldCount[COPPER_WIRE] >= 1;
+            },
+        },
+
+        {
+            "Earn $1000",
+            "Scale up: more drills, splitters to share ore between machines, and longer production lines.",
+            [](const world &w) { return w.totalEarned >= 1000; }
+        },
+    };
+
+    return g;
+}
+
+void setWindowCallbacks(GLFWwindow *window) {
+    glfwSetFramebufferSizeCallback(window, [](GLFWwindow *window, int width, int height) {
+        engine *ptr = (engine *) glfwGetWindowUserPointer(window);
+
+        ptr->winSize = {width, height};
 
         glViewport(0, 0, width, height);
     });
 }
 
-void loadWorld(engine* e) {
+void loadWorld(engine *e) {
     double world_start = glfwGetTime();
 
     std::vector<tileInst> inst;
@@ -42,31 +99,35 @@ void loadWorld(engine* e) {
     object grid = object("resources/meshes/grid.obj");
     grid.create(e->genHandle());
 
-    grid.props.unlit=true;
-    grid.props.col=glm::vec4(0.8f, 0.8f, 0.8f, 0.5f);
-    grid.props.visible=false;
+    grid.props.unlit = true;
+    grid.props.col = glm::vec4(0.8f, 0.8f, 0.8f, 0.5f);
+    grid.props.visible = false;
 
     e->renderables.insert({grid.id, grid});
 
     for (int x = -e->worldSize.x / 2; x < -e->worldSize.x / 2 + e->worldSize.x; x++) {
         for (int y = -e->worldSize.y / 2; y < -e->worldSize.y / 2 + e->worldSize.y; y++) {
-            glm::vec4 col = {0,0,0,1};
-            cellType c = e->w->getCell({x,y});
+            glm::vec4 col = {0, 0, 0, 1};
+            cellType c = e->w->getCell({x, y});
             switch (c) {
                 case GROUND: {
                     col = {0.23f, 0.16f, 0.13f, 1.0f};
                     break;
-                } case IRON: {
+                }
+                case IRON: {
                     col = {0.3f, 0.31f, 0.33f, 1.0f};
                     break;
-                } case COAL: {
+                }
+                case COAL: {
                     col = {0.2f, 0.2f, 0.2f, 1.0f};
                     break;
-                } case COPPER: {
+                }
+                case COPPER: {
                     col = {0.72f, 0.45f, 0.2f, 1.0f};
                     break;
-                } case OBSTRUCTED: {
-                    col = {0,0,0,1};
+                }
+                case OBSTRUCTED: {
+                    col = {0, 0, 0, 1};
                 }
             }
 
@@ -76,7 +137,7 @@ void loadWorld(engine* e) {
 
     e->tileMesh = mesh::cube();
     e->tileMesh.create();
-    e->tilecount=(int)inst.size();
+    e->tilecount = (int) inst.size();
 
     glGenBuffers(1, &e->tileInstVBO);
     glBindBuffer(GL_ARRAY_BUFFER, e->tileInstVBO);
@@ -85,11 +146,11 @@ void loadWorld(engine* e) {
     glBindVertexArray(e->tileMesh.VAO);
 
     glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(tileInst), (void*)offsetof(tileInst, pos));
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(tileInst), (void *) offsetof(tileInst, pos));
     glVertexAttribDivisor(3, 1);
 
     glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(tileInst), (void*)offsetof(tileInst, col));
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(tileInst), (void *) offsetof(tileInst, col));
     glVertexAttribDivisor(4, 1);
 
     glBindVertexArray(0);
@@ -97,29 +158,29 @@ void loadWorld(engine* e) {
     log(INFO, ("Loaded objects in " + to_string(glfwGetTime() - obj_start) + "s").c_str());
 }
 
-void checkKeyInputs(engine* e) {
+void checkKeyInputs(engine *e) {
     GLFWwindow &w = e->getWindow();
 
-    if (glfwGetKey(&w, GLFW_KEY_ESCAPE) == GLFW_PRESS) {glfwSetWindowShouldClose(&w, true);}
+    if (glfwGetKey(&w, GLFW_KEY_ESCAPE) == GLFW_PRESS) { glfwSetWindowShouldClose(&w, true); }
 
     glm::vec2 input = {};
 
-    if (glfwGetKey(&w, GLFW_KEY_W) == GLFW_PRESS) {input.y=e->cameraSpeed;}
-    if (glfwGetKey(&w, GLFW_KEY_A) == GLFW_PRESS) {input.x=-e->cameraSpeed;}
-    if (glfwGetKey(&w, GLFW_KEY_S) == GLFW_PRESS) {input.y=-e->cameraSpeed;}
-    if (glfwGetKey(&w, GLFW_KEY_D) == GLFW_PRESS) {input.x=e->cameraSpeed;}
+    if (glfwGetKey(&w, GLFW_KEY_W) == GLFW_PRESS) { input.y = e->cameraSpeed; }
+    if (glfwGetKey(&w, GLFW_KEY_A) == GLFW_PRESS) { input.x = -e->cameraSpeed; }
+    if (glfwGetKey(&w, GLFW_KEY_S) == GLFW_PRESS) { input.y = -e->cameraSpeed; }
+    if (glfwGetKey(&w, GLFW_KEY_D) == GLFW_PRESS) { input.x = e->cameraSpeed; }
 
     if (glm::length(input) > 0) {
-       input = glm::normalize(input);
+        input = glm::normalize(input);
 
         glm::vec3 fw = e->cameraTargetOffset;
-        fw.y=0;
-        fw=glm::normalize(fw);
+        fw.y = 0;
+        fw = glm::normalize(fw);
 
         glm::vec3 rt = glm::normalize(glm::cross(fw, glm::vec3(0, 1, 0)));
 
-        glm::vec3 move = (fw * input.y + rt * input.x)  * e->cameraSpeed * (float)e->dt;
-        e->camPos+=move;
+        glm::vec3 move = (fw * input.y + rt * input.x) * e->cameraSpeed * (float) e->dt;
+        e->camPos += move;
     }
 
     e->camTarget = e->camPos + e->cameraTargetOffset;
@@ -128,7 +189,10 @@ void checkKeyInputs(engine* e) {
 int engine::init() {
     log(INFO, "Initalizing...");
 
-    if (!glfwInit()) {log(ERRO, "GLFW Failed to initalize"); return -1;}
+    if (!glfwInit()) {
+        log(ERRO, "GLFW Failed to initalize");
+        return -1;
+    }
 
     //window hints
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -136,14 +200,21 @@ int engine::init() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     //window creation
-    window = glfwCreateWindow(winSize[0],  winSize[1], "Factory Game", NULL, NULL);
-    if (window == nullptr) {log(ERRO, "GLFW Failed to create a window"); glfwTerminate(); return -1;}
+    window = glfwCreateWindow(winSize[0], winSize[1], "Factory Game", NULL, NULL);
+    if (window == nullptr) {
+        log(ERRO, "GLFW Failed to create a window");
+        glfwTerminate();
+        return -1;
+    }
     glfwMakeContextCurrent(window);
 
     //load glad
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {log(ERRO, "GLAD Failed to load"); return -1;}
+    if (!gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)) {
+        log(ERRO, "GLAD Failed to load");
+        return -1;
+    }
 
-    glViewport(0, 0, winSize[0], winSize[1]);//size of the window
+    glViewport(0, 0, winSize[0], winSize[1]); //size of the window
     setWindowCallbacks(window);
 
     //ImGui setup
@@ -154,15 +225,15 @@ int engine::init() {
 
     //Shader initalization
     string rv = readFile("resources/main.vert");
-    string rf =  readFile("resources/main.frag");
+    string rf = readFile("resources/main.frag");
     const GLchar *vert_src = rv.c_str();
     const GLchar *frag_src = rf.c_str();
 
-    unsigned int vert_shader=glCreateShader(GL_VERTEX_SHADER);
+    unsigned int vert_shader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vert_shader, 1, &vert_src, NULL);
     glCompileShader(vert_shader);
 
-    unsigned int frag_shader=glCreateShader(GL_FRAGMENT_SHADER);
+    unsigned int frag_shader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(frag_shader, 1, &frag_src, NULL);
     glCompileShader(frag_shader);
 
@@ -187,7 +258,7 @@ int engine::init() {
     }
 
     //create shader program and link
-    shader_program=glCreateProgram();
+    shader_program = glCreateProgram();
     glAttachShader(shader_program, vert_shader);
     glAttachShader(shader_program, frag_shader);
     glLinkProgram(shader_program);
@@ -231,9 +302,9 @@ int engine::init() {
 
     double time = glfwGetTime();
 
-    startup=time;
-    lastframe=time;
-    lastframeT=time;
+    startup = time;
+    lastframe = time;
+    lastframeT = time;
 
     log(INFO, "Loading world...");
     loadWorld(this);
@@ -281,14 +352,15 @@ void engine::drawPorts(objectType t, glm::ivec2 pos, direction dir, float alpha)
 
 void engine::drawUI() {
     //placement ui
-    ImGui::SetNextWindowPos(ImVec2((float)winSize.x * 0.5f, (float)winSize.y - 10), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+    ImGui::SetNextWindowPos(ImVec2((float) winSize.x * 0.5f, (float) winSize.y - 10), ImGuiCond_Always,
+                            ImVec2(0.5f, 1.0f));
 
     ImGui::Begin("Hotbar", nullptr,
-        ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoTitleBar |
-        ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_AlwaysAutoResize |
-        ImGuiWindowFlags_NoScrollbar
+                 ImGuiWindowFlags_NoResize |
+                 ImGuiWindowFlags_NoTitleBar |
+                 ImGuiWindowFlags_NoMove |
+                 ImGuiWindowFlags_AlwaysAutoResize |
+                 ImGuiWindowFlags_NoScrollbar
     );
 
     for (int i = 0; i < OBJECT_COUNT; i++) {
@@ -299,19 +371,24 @@ void engine::drawUI() {
         ImGui::PushID(i);
 
         ImVec4 col(d.col.r, d.col.g, d.col.b, 1.0f);
+        bool afford = w->canAfford((objectType)i);
 
         ImGui::PushStyleColor(ImGuiCol_Button, selected == i ? col : ImVec4(col.x * 0.5f, col.y * 0.5f, col.z * 0.5f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col);
+        ImGui::PushStyleColor(ImGuiCol_Text, afford ? ImVec4(1, 1, 1, 1) : ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
 
-        if (ImGui::Button(d.name, ImVec2(80, 44))) {
+        char label[64];
+        snprintf(label, sizeof(label), "%s\n$%d", d.name, costOf((objectType)i));
+
+        if (ImGui::Button(label, ImVec2(80, 44))) {
             selected = selected == i ? -1 : i;
         }
 
-        ImGui::PopStyleColor(2);
+        ImGui::PopStyleColor(3);
         ImGui::PopID();
     }
 
-    ImGui::Text("LMB place | RMB remove | R rotate | 1-%d select | Q deselect", (int)OBJECT_COUNT);
+    ImGui::Text("LMB place | RMB remove | R rotate | 1-%d select | Q deselect", (int) OBJECT_COUNT);
     ImGui::End();
 
     //inspector window
@@ -319,7 +396,10 @@ void engine::drawUI() {
         building *b = w->getBuilding(inspectedCell);
 
         //building doesnt exist
-        if (!b) {hasInspected = false; return;}
+        if (!b) {
+            hasInspected = false;
+            return;
+        }
 
         const buildingDef &d = defOf(b->type);
 
@@ -344,7 +424,7 @@ void engine::drawUI() {
             if (ImGui::BeginCombo("##recipe", cur ? itemName(cur->out) : "None Selected")) {
                 if (ImGui::Selectable("None", b->convertTo == NONE)) b->convertTo = NONE;
 
-                for (const recipe &r : recipes()) {
+                for (const recipe &r: recipes()) {
                     char label[96];
                     snprintf(label, sizeof(label), "%s (%d x %s)", itemName(r.out), r.inCount, itemName(r.in));
 
@@ -393,7 +473,97 @@ void engine::drawUI() {
 
         ImGui::End();
 
-        if (!open)hasInspected=false;
+        if (!open)hasInspected = false;
+    }
+
+    //stats window
+    ImGui::SetNextWindowPos(ImVec2((float)winSize.x - 10, 10), ImGuiCond_Always, ImVec2(1.0f, 0));
+
+    ImGui::Begin("Stats", nullptr,
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_AlwaysAutoResize
+    );
+
+    int secs = (int)(glfwGetTime()-startup);
+
+    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "$%d", w->money);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(+$%d/s)", incomePerSec);
+
+    ImGui::Separator();
+    ImGui::Text("Playtime: %d:%02d:%02d", secs / 3600, (secs / 60) % 60, secs % 60);
+    ImGui::Text("Items sold: %d", w->itemsSold);
+    ImGui::Text("Total earned: %d", w->totalEarned);
+
+    ImGui::Separator();
+    if (ImGui::SmallButton(showTutorial ? "Hide goals (H)" : "Show goals (H)")) showTutorial = !showTutorial;
+
+    statsBottom = ImGui::GetWindowPos().y + ImGui::GetWindowSize().y;
+    ImGui::End();
+
+    //tutorial
+    const auto &gl = goals();
+    int total = (int)gl.size();
+
+    if ((int)goalDone.size() != total) goalDone.assign(total, false);
+
+    int done = 0, current = -1;
+    for (int i = 0; i < total; i++) {
+        if (!goalDone[i] && gl[i].check(*w)) goalDone[i] = true;
+
+        if (goalDone[i]) done++;
+        else if (current < 0) current = i;
+    }
+
+    bool h = glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS;
+
+    if (h && !prevH) showTutorial = !showTutorial;
+    prevH = h;
+
+    if (showTutorial) {
+        ImGui::SetNextWindowPos(ImVec2((float)winSize.x - 10, statsBottom + 8), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+        ImGui::SetNextWindowSize(ImVec2(300, 0), ImGuiCond_Always);
+
+        if (ImGui::Begin("Goals", &showTutorial, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%d / %d goals", done, total);
+
+            ImGui::ProgressBar((float)done/(float)total, ImVec2(-1.0f, 0.0f), buf);
+
+            ImGui::Separator();
+
+            if (current >= 0) {
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Current goal: %s", gl[current].title);
+                ImGui::TextWrapped("%s", gl[current].hint);
+            } else {
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "All goals complete!");
+                ImGui::TextWrapped("Keep expanding and see how much you can earn.");
+            }
+
+            if (ImGui::CollapsingHeader("All Goals")) {
+                for (int i = 0; i < total; i++) {
+                    ImVec4 c = goalDone[i] ? ImVec4(0.4f, 1.0f, 0.5f, 1.0f) : i == current ? ImVec4(1.0f, 0.85f, 0.3f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+                    ImGui::TextColored(c, "%s %d. %s", goalDone[i] ? "[x]" : "[ ]", i + 1, gl[i].title);
+                }
+            }
+
+            if (ImGui::CollapsingHeader("Controls and Tips")) {
+                auto tip = [](const char *s) {
+                    ImGui::Bullet();
+                    ImGui::TextWrapped("%s", s);
+                };
+
+                tip("WASD moves the camera");
+                tip("R rotates what you're placing");
+                tip("Orange cubes are outputs, Blue cubes are inputs");
+                tip("If one building backs up, buildings behind it tend to back up aswell");
+            }
+        }
+
+        ImGui::End();
     }
 }
 
@@ -409,16 +579,16 @@ void engine::handlePlacement() {
 
     if (ww <= 0 || wh <= 0) return;
 
-    float nx = 2.0f * (float)mx / ww - 1.0f;
-    float ny = 1.0f - 2.0f * (float)my / wh;
+    float nx = 2.0f * (float) mx / ww - 1.0f;
+    float ny = 1.0f - 2.0f * (float) my / wh;
 
     glm::mat4 inv = glm::inverse(projM * viewM);
 
     glm::vec4 a = inv * glm::vec4(nx, ny, -1, 1);
     glm::vec4 b = inv * glm::vec4(nx, ny, 1, 1);
 
-    glm::vec3 p0 = glm::vec3(a)/a.w;
-    glm::vec3 p1 = glm::vec3(b)/b.w;
+    glm::vec3 p0 = glm::vec3(a) / a.w;
+    glm::vec3 p1 = glm::vec3(b) / b.w;
 
     glm::vec3 dir = glm::normalize(p1 - p0);
 
@@ -428,8 +598,8 @@ void engine::handlePlacement() {
     glm::vec3 hit = p0 + dir * t;
 
     hoverCell = {
-        (int)floor(hit.x + 0.5f),
-        (int)floor(hit.z + 0.5f),
+        (int) floor(hit.x + 0.5f),
+        (int) floor(hit.z + 0.5f),
     };
 
     hoverValid = w->inBounds(hoverCell);
@@ -445,7 +615,7 @@ void engine::handlePlacement() {
     }
 
     if (selected >= 0 && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-        w->place((objectType)selected, hoverCell, placeDir);
+        w->place((objectType) selected, hoverCell, placeDir);
     }
 
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
@@ -453,7 +623,7 @@ void engine::handlePlacement() {
     }
 
     bool r = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
-    if (r && !prevR) placeDir = (direction)(((int)placeDir + 1) % 4);
+    if (r && !prevR) placeDir = (direction) (((int) placeDir + 1) % 4);
     prevR = r;
 
     for (int i = 0; i < OBJECT_COUNT; i++) {
@@ -490,6 +660,12 @@ void engine::update() {
 
     w->update(dt);
 
+    if (glfwGetTime() - incomeTimer >= 1.0) {
+        incomePerSec = w->totalEarned - incomeLast;
+        incomeLast = w->totalEarned;
+        incomeTimer = glfwGetTime();
+    }
+
     frames++;
 
     if (glfwGetTime() - lastframe >= 1.0f) {
@@ -513,7 +689,7 @@ void engine::render() {
 
     glUseProgram(shader_program);
 
-    float aspect = winSize.y > 0 ? (float)winSize[0] / (float)winSize[1] : 1.0f;
+    float aspect = winSize.y > 0 ? (float) winSize[0] / (float) winSize[1] : 1.0f;
     glm::mat4 proj = glm::perspective(glm::radians(FOV), aspect, 0.01f, 1000.0f);
     glm::mat4 view = glm::lookAt(camPos, camTarget, glm::vec3(0.0f, 1.0f, 0.0f));
 
@@ -532,12 +708,12 @@ void engine::render() {
     glUniform1i(instLoc, 0);
 
     //draw buildings
-    for (auto &b : w->buildings()) {
+    for (auto &b: w->buildings()) {
         if (!b) continue;
 
         const buildingDef d = defOf(b->type);
 
-        float yaw = -(int)b->dir * 90.0f;
+        float yaw = -(int) b->dir * 90.0f;
 
         glm::vec3 pos(b->pos.x, 0.5f + d.height * 0.5f, b->pos.y);
         drawCube(pos, {0.9f, d.height, 0.9f}, yaw, d.col, false);
@@ -546,25 +722,27 @@ void engine::render() {
     }
 
     if (hoverValid && selected >= 0) {
-        const buildingDef &d = defOf((objectType)selected);
-        bool ok = w->canPlace((objectType)selected, hoverCell);
+        const buildingDef &d = defOf((objectType) selected);
+        bool ok = w->canPlace((objectType)selected, hoverCell) && w->canAfford((objectType)selected);
 
         glm::vec4 col = ok ? glm::vec4(0.2f, 1.0f, 0.3f, 0.5f) : glm::vec4(1.0f, 0.2f, 0.2f, 0.5f);
-        drawCube({hoverCell.x, 0.5f + d.height * 0.5f, hoverCell.y},{0.9f, d.height, 0.9f}, -(int)placeDir * 90.0f, col, true);
+        drawCube({hoverCell.x, 0.5f + d.height * 0.5f, hoverCell.y}, {0.9f, d.height, 0.9f}, -(int) placeDir * 90.0f,
+                 col, true);
 
-        drawPorts((objectType)selected, hoverCell, placeDir, 0.8f);
+        drawPorts((objectType) selected, hoverCell, placeDir, 0.8f);
     }
 
     if (hasInspected) {
         if (building *ib = w->getBuilding(inspectedCell)) {
             const buildingDef &id = defOf(ib->type);
-            drawCube({inspectedCell.x, 0.5f + id.height * 0.5f, inspectedCell.y},{1.0f, id.height + 0.05f, 1.0f}, -(int)ib->dir * 90.0f,{1, 1, 1, 0.25f}, true);
+            drawCube({inspectedCell.x, 0.5f + id.height * 0.5f, inspectedCell.y}, {1.0f, id.height + 0.05f, 1.0f},
+                     -(int) ib->dir * 90.0f, {1, 1, 1, 0.25f}, true);
         }
     }
 
     //draw everything else
-    for (auto& [id, obj] : renderables) {
-        if (!obj.props.visible) {continue;}
+    for (auto &[id, obj]: renderables) {
+        if (!obj.props.visible) { continue; }
 
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, obj.props.pos);

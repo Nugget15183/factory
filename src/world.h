@@ -280,6 +280,18 @@ inline glm::ivec2 dirVec(direction d) {
     }
 }
 
+inline int costOf(objectType t) {
+    switch (t) {
+        case CONVEYOR: return 2;
+        case CONVEYOR_SPLIITER: return 15;
+        case DRILL: return 50;
+        case CONSTRUCTOR: return 120;
+        case SMELTERY: return 90;
+        case SELLER: return 30;
+        default: return 0;
+    }
+}
+
 inline direction rotateRight(direction d) {
     return (direction)(((int)d + 1) % 4);
 }
@@ -305,9 +317,9 @@ inline int acceptsFrom(const building &f, direction side) {
 
     if (f.type == CONVEYOR) return side != f.dir;
 
-    if (d.hasInput && side == getOpposite(f.dir)) return true;
-    if (d.hasInputL && side == getOpposite(f.dir)) return true;
-    if (d.hasInputR && side == getOpposite(f.dir)) return true;
+    if (d.hasInput  && side == getOpposite(f.dir)) return true;
+    if (d.hasInputL && side == rotateLeft(f.dir))  return true;
+    if (d.hasInputR && side == rotateRight(f.dir)) return true;
 
     return false;
 }
@@ -346,6 +358,9 @@ public:
     bool canPlace(objectType t, glm::ivec2 pos);
     const std::vector<std::unique_ptr<building>>& buildings() const { return grid; }
 
+    bool canAfford(objectType t) const { return money >= costOf(t); };
+    int buildingCount(objectType t) const { return counts[t]; }
+
     bool place(objectType t, glm::ivec2 pos, direction d);
     bool remove(glm::ivec2 pos);
 
@@ -353,6 +368,12 @@ public:
 
     int wid, height;
     int money = 100;
+
+    int totalEarned = 0;
+    int itemsSold = 0;
+
+    //sell count per item
+    int soldCount[NONE] = {};
 private:
     int idx(glm::ivec2 p) const {
         return (p.y + height / 2) * wid + (p.x + wid / 2);
@@ -360,6 +381,8 @@ private:
 
     std::vector<cellType> cells;
     std::vector<std::unique_ptr<building>> grid;
+
+    int counts[OBJECT_COUNT] = {};
 };
 
 #endif //FACTORY_WORLD_H

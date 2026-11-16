@@ -281,6 +281,7 @@ private:
     unsigned int shader_program;
 
     float FOV = 70.0f;
+    float statsBottom = 0.0f;
 
     int lastframec = 0;
     int frames = 0;
@@ -289,6 +290,14 @@ private:
     bool hasInspected = false;
 
     bool prevR = false;
+    bool prevH = false;
+    bool showTutorial = true;
+
+    std::vector<bool> goalDone;
+
+    double incomeTimer = 0.0;
+    int incomeLast = 0;
+    int incomePerSec = 0;
 
     glm::mat4 projM = glm::mat4(1), viewM = glm::mat4(1);
     glm::ivec2 inspectedCell = {0,0};
